@@ -217,10 +217,19 @@ systemctl daemon-reload && systemctl restart docker
 # 装 git（Ubuntu 一般自带，没有就装）
 apt update && apt install -y git
 
-# 克隆仓库
-git clone https://github.com/programming-thinker/Jina_Embeddings_v4_RAG.git
+# 克隆仓库（注意 -b 后面的分支名，不能省）
+git clone -b claude/project-purpose-e5ym2m https://github.com/AidenChenCode/Jina_Embeddings_v4_RAG.git
 cd Jina_Embeddings_v4_RAG
 ```
+
+> ⚠️ **为什么必须带 `-b 分支名`？** 网页前端、Demo 后端、Docker 配置、Demo 数据（`mvp/chunks.json`）都只在 `claude/project-purpose-e5ym2m` 分支上，**没有合并进 `main`**。`git clone` 默认拿的是 `main`，不带 `-b` 的话，后面 `docker compose up -d demo` 会直接报找不到文件。
+>
+> 已经 clone 过 `main` 的，切过去即可：
+> ```bash
+> git fetch origin && git checkout claude/project-purpose-e5ym2m
+> ```
+>
+> 验证拿对了：`ls docker-compose.yml web/index.html` 两个文件都在就没问题。
 
 > 如果仓库是私有的，`git clone` 会要求输入账号密码。GitHub 现在不支持密码了，需要用 [Personal Access Token](https://github.com/settings/tokens)。或者简单粗暴：本地打包好用 `scp` 传上去。
 
@@ -467,6 +476,15 @@ docker compose up -d --build demo   # 如果改了依赖，才需要重新 build
 
 ## 附录 A：常见问题排查
 
+### `docker compose up` 报 "no configuration file provided" / 找不到文件
+
+**clone 时没带分支名，拿到的是 `main`。** 本项目的部署文件只在 `claude/project-purpose-e5ym2m` 分支上：
+
+```bash
+git fetch origin && git checkout claude/project-purpose-e5ym2m
+ls docker-compose.yml web/index.html     # 两个都在才对
+```
+
 ### 浏览器打不开页面
 
 按顺序排查：
@@ -602,7 +620,7 @@ docker compose exec full python rebuild_index.py
 # ===== 首次部署（Demo 模式）=====
 ssh root@你的公网IP
 curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
-git clone https://github.com/programming-thinker/Jina_Embeddings_v4_RAG.git
+git clone -b claude/project-purpose-e5ym2m https://github.com/AidenChenCode/Jina_Embeddings_v4_RAG.git
 cd Jina_Embeddings_v4_RAG
 echo 'SILICONFLOW_API_KEY=你的key' > .env      # 可选
 docker compose up -d demo
@@ -621,8 +639,9 @@ docker compose down && docker compose up -d full
 docker compose exec full python setup_full.py
 ```
 
-**记住三件事：**
+**记住四件事：**
 
-1. **先跑 Demo 模式** —— 3 分钟看到结果，链路通了再折腾权重
-2. **端口一定要放行** —— 打不开页面基本都是这个原因
-3. **用完记得释放** —— 按量计费忘记关是最常见的损失
+1. **clone 要带分支名** —— `-b claude/project-purpose-e5ym2m`，`main` 上没有部署文件
+2. **先跑 Demo 模式** —— 3 分钟看到结果，链路通了再折腾权重
+3. **端口一定要放行** —— 打不开页面基本都是这个原因
+4. **用完记得释放** —— 按量计费忘记关是最常见的损失

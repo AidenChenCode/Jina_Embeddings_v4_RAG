@@ -170,6 +170,15 @@ docker compose up -d full     # 完整模式，需先下载权重到 ./models
 
 > **想部署到云服务器？** 见 **[DEPLOY_CN.md](DEPLOY_CN.md)** —— 从开通服务器、放行端口、安装 Docker 到两条部署路线的完整教程，含访问控制、成本管理与常见问题排查。
 
+### 📏 评测
+
+```bash
+python eval/run_eval.py                               # 评测 Demo 后端，约 5 秒，无需 GPU / Key
+python eval/run_eval.py --api http://127.0.0.1:8000   # 评测正在运行的服务（含完整系统）
+```
+
+57 题评测集，按意图、检索、答案三层打分，并把每个信息点归因到检索层或生成层。评测方案、基线结果与一次完整的改进验证见 **[EVAL_CN.md](EVAL_CN.md)**。
+
 ### 🚀 完整模式（Jina v4 + FAISS + LLM）一键部署
 
 ```bash

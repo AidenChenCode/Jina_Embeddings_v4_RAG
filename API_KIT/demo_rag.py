@@ -83,6 +83,15 @@ class DemoRAG:
 
     # ------------------------------------------------------------------ 检索
 
+    def retrieve(self, user_query: str):
+        """公开检索入口：返回 (intent, [(chunk, score), ...])，按分数降序。
+
+        与 query() 走同一条检索路径，评测脚本用它拿到完整检索结果
+        （query() 返回的 sources 只截取前 MAX_SOURCES 条）。
+        """
+        intent = self.analyze_intent(user_query)
+        return intent, self._retrieve(user_query, intent)
+
     def _retrieve(self, query: str, intent: dict):
         """返回 [(chunk, score)]，按 pre-filter 逐省检索。"""
         qtype = intent["type"]
@@ -157,8 +166,7 @@ class DemoRAG:
     def query(self, user_query: str) -> dict:
         start = time.time()
         try:
-            intent = self.analyze_intent(user_query)
-            results = self._retrieve(user_query, intent)
+            intent, results = self.retrieve(user_query)
 
             llm_used = False
             if self.api_key:

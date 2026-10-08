@@ -291,16 +291,106 @@ LLM 模式用的是启发式规则：
 python eval/run_eval.py
 
 # Demo 后端 · LLM 模式：配上 Key 即自动切换（会调用 57 次 LLM，按 token 计费，
-# 建议先用 --types fact 小规模试跑）
+# 建议先用 --limit 5 小规模试跑）
 export SILICONFLOW_API_KEY=你的key
-python eval/run_eval.py --types fact
+python eval/run_eval.py --limit 5
 
-# 服务器上的完整系统：先启动服务（不带 --demo），再从任意机器评测
-python API_KIT/web_server.py --host 0.0.0.0 --port 8000
-python eval/run_eval.py --api http://服务器IP:8000 --out eval/reports/full_system.md
+# 完整系统（Jina v4 + FAISS + LLM）：在 GPU 服务器上，步骤见下一小节
+python eval/run_eval.py --api http://127.0.0.1:8000 --expect-full
 ```
 
 HTTP 模式下只拿得到接口返回的前 12 条引用，枚举、对比、汇总题的检索指标会显示为「—」，事实题的排名只在前 12 条内有效（即 MRR@12）。答案层指标不受影响。
+
+### 在 GPU 服务器上评测完整系统
+
+完整系统要 GPU 跑 Jina v4，要 API Key 调 LLM 生成答案。评测脚本通过 HTTP 调用它，所以分两步：**先把完整系统跑起来，再在同一台服务器上对着它跑评测。**
+
+**⓪ 准备**
+
+| 项目 | 要求 | 原因 |
+|---|---|---|
+| 显卡 | **A10（阿里云 `gn7i`）** 或 A100、30 系、40 系 | 模型以 bfloat16 加载，T4、V100 等老卡不支持，会报错或很慢 |
+| 系统 | **Ubuntu 22.04**，购买时勾选自动安装 GPU 驱动 | 自带 Python 3.10；`requirements.txt` 钉死的 numpy 1.24.3 不支持 Python 3.12 |
+| 磁盘 | 40GB 以上 | 模型权重 7.5GB + PyTorch 等依赖 |
+| API Key | 硅基流动 | 完整系统的答案由 LLM 生成，没有 Key 每道题都会失败 |
+
+**① 拉代码（必须带分支名，`main` 上没有这些文件）**
+
+```bash
+git clone -b claude/project-purpose-e5ym2m https://github.com/AidenChenCode/Jina_Embeddings_v4_RAG.git
+cd Jina_Embeddings_v4_RAG
+```
+
+**② 装依赖并确认能用上 GPU**
+
+```bash
+apt update && apt install -y python3-venv tmux
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt fastapi uvicorn
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# 应输出 True 和显卡型号；输出 False 说明驱动或 PyTorch 有问题，后面不用继续
+```
+
+**③ 下载模型权重（约 7.5GB，只需一次）**
+
+```bash
+pip install -U huggingface_hub
+export HF_ENDPOINT=https://hf-mirror.com      # 国内服务器走镜像
+hf download jinaai/jina-embeddings-v4 --local-dir models/jina-embeddings-v4
+```
+
+**④ 一键部署：解压报告 → 生成配置 → 建索引**
+
+```bash
+export SILICONFLOW_API_KEY=你的key    # 必须在这一步之前设置，会写进 config/config.py
+python setup_full.py                  # 有 GPU 时建索引约 2~5 分钟
+```
+
+如果跑 `setup_full.py` 时忘了设 Key：编辑 `config/config.py`，把 `api_key` 改成你的 Key。
+
+**⑤ 启动完整系统，并确认没有降级**
+
+```bash
+nohup python API_KIT/web_server.py --port 8000 > server.log 2>&1 &    # nohup：断开 SSH 服务也不停
+tail -f server.log      # 加载模型需要一两分钟，出现 "Uvicorn running" 后按 Ctrl+C 退出查看
+curl -s http://127.0.0.1:8000/api/status
+```
+
+返回里必须是 `"mode":"full"`。**如果是 `"demo"`，说明完整系统初始化失败、自动降级了**——这时评测测的是 Demo，不是你要的系统。到 `server.log` 里找「降级为 demo 模式」那一行，括号里就是原因。
+
+**⑥ 先试跑 5 题**
+
+```bash
+python eval/run_eval.py --api http://127.0.0.1:8000 --expect-full --limit 5
+```
+
+`--expect-full` 会在服务不是完整系统时直接中止，防止白跑。试跑完看报告里的时延，再到硅基流动控制台看这 5 题花了多少钱，乘以 57/5，估算全量的耗时和费用。
+
+**⑦ 跑全量（放进 tmux，断开 SSH 也不会中断）**
+
+```bash
+tmux new -s eval
+source .venv/bin/activate
+python eval/run_eval.py --api http://127.0.0.1:8000 --expect-full \
+    --out eval/reports/full_system.md --dump eval/reports/full_system.jsonl
+# 按 Ctrl+B 再按 D 离开，回来看进度：tmux attach -t eval
+```
+
+单题超时默认 600 秒。全省类问题会分批多次调用 LLM，比单省题慢得多；全量可能要一两个小时，以试跑的耗时为准。
+
+**⑧ 把报告拿回本地**
+
+```bash
+# 在你自己的电脑上执行
+scp root@服务器IP:~/Jina_Embeddings_v4_RAG/eval/reports/full_system.md .
+```
+
+**几点说明：**
+
+- **在服务器本机评测**（`127.0.0.1`），不用对外开放端口；如果按[部署教程](DEPLOY_CN.md)给服务加了 nginx 密码，本机访问 8000 端口也不受影响
+- `--api` 模式只用 Python 标准库；如果完整系统是用 Docker 跑的，直接用宿主机自带的 `python3` 跑评测脚本即可
+- 拿到报告后和 Demo 基线（[`eval/reports/baseline_demo_digest.md`](eval/reports/baseline_demo_digest.md)）**逐项对比**：同一套题，TF-IDF + 摘编 对 Jina v4 + LLM，每一层分别提升了多少
+- 完整系统的答案用 LLM 判分规则打分，**引用结果前先抽 30~50 题人工复核**（见[第五节](#五怎么判分)）
 
 ### 评测集怎么长大
 

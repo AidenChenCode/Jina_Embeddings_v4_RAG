@@ -561,7 +561,11 @@ docker system prune -a       # 清理无用的镜像和缓存（可释放几个 
 
 CPU 完全能跑，只是慢。如果确实需要 GPU（比如要频繁重建索引，或查询量大）：
 
-**① 买 GPU 实例**：阿里云 `ecs.gn6i`（T4 卡）或同级产品，按量约 ¥5~15/小时。**用完一定要释放**，忘记关是烧钱最快的方式。
+**① 买 GPU 实例**：阿里云 `ecs.gn7i`（A10 卡，24GB 显存）或同级产品，按小时计费，价格以控制台为准。**用完一定要释放**，忘记关是烧钱最快的方式。
+
+> ⚠️ **不要选 T4（`gn6i`）、V100 这类老卡。** 代码用 bfloat16 精度加载模型（`src/embedding_manager.py`），bf16 要 Ampere 架构及以上的显卡（A10、A100、30 系、40 系）才有硬件支持，老卡上会报错或慢得多。
+>
+> 购买时：镜像选 **Ubuntu 22.04**（自带 Python 3.10；`requirements.txt` 钉死的 numpy 1.24.3 不支持 Python 3.12，所以别选 24.04），并勾选**自动安装 GPU 驱动**。
 
 **② 装 NVIDIA 驱动**（通常选带驱动的镜像可跳过）：
 
@@ -596,16 +600,19 @@ systemctl restart docker
               capabilities: [gpu]
 ```
 
-**⑤ 重建索引**（`setup_full.py` 会自动检测到 GPU）：
+**⑤ 首次部署跑 `setup_full.py`**（自动解压报告、生成配置、检测到 GPU、建索引）：
 
 ```bash
 docker compose up -d full
-docker compose exec full python rebuild_index.py
+docker compose exec full python setup_full.py
+docker compose restart full
 ```
+
+已经在 CPU 上建过索引的，换到 GPU 不用重建——索引和用什么设备算出来的无关。
 
 **效果对比：**
 
-| | CPU | GPU (T4) |
+| | CPU | GPU (A10) |
 |---|---|---|
 | 建索引（855 块） | 15~40 分钟 | 2~5 分钟 |
 | 单次查询编码 | 1~3 秒 | 毫秒级 |

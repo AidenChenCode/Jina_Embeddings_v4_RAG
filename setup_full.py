@@ -16,6 +16,7 @@
 import os
 import re
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -23,6 +24,7 @@ CONFIG = ROOT / "config" / "config.py"
 CONFIG_EXAMPLE = ROOT / "config" / "config.example.py"
 MODEL_DIR = ROOT / "models" / "jina-embeddings-v4"
 DOCS_DIR = ROOT / "docs"
+REPORTS_ZIP = DOCS_DIR / "31省区市政府工作报告.zip"
 
 
 def step(n, title):
@@ -32,6 +34,30 @@ def step(n, title):
 def fail(msg):
     print(f"\n❌ {msg}")
     sys.exit(1)
+
+
+def extract_reports(zip_path, dest):
+    """解压报告压缩包，返回新解出的 docx 数量。
+
+    压缩包里的文件名是 GBK 编码、且没打 UTF-8 标记，Python 会按 cp437 解码成乱码；
+    乱码文件名会让 data_processor 的省份识别失效，所以这里还原成 GBK。
+    只取文件名本身写入 dest，不信任压缩包里的目录结构。
+    """
+    n = 0
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            name = info.filename
+            if not info.flag_bits & 0x800:          # 未标记 UTF-8
+                try:
+                    name = name.encode("cp437").decode("gbk")
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    pass
+            base = Path(name).name
+            target = dest / base
+            if base.endswith(".docx") and not target.exists():
+                target.write_bytes(z.read(info))
+                n += 1
+    return n
 
 
 # ---------------------------------------------------------------- 1. 依赖
@@ -80,15 +106,19 @@ else:
 
     CONFIG.write_text(text, encoding="utf-8")
     print(f"  ✅ 已生成 {CONFIG}")
-    print(f"     - raw_documents → docs/（31 份报告已在仓库中）")
+    print(f"     - raw_documents → docs/（31 份报告从 docs/ 下的压缩包自动解压）")
     print(f"     - device → {device}")
     print(f"     - api_key → {key_note}")
 
 n_docx = len(list(DOCS_DIR.glob("*.docx")))
+if n_docx < 31 and REPORTS_ZIP.exists():
+    # 仓库里只提交了压缩包，首次部署时在这里自动解压
+    print(f"  📦 解压 {REPORTS_ZIP.name} …")
+    print(f"     新解出 {extract_reports(REPORTS_ZIP, DOCS_DIR)} 份报告")
+    n_docx = len(list(DOCS_DIR.glob("*.docx")))
 if n_docx < 31:
     fail(f"docs/ 下只找到 {n_docx} 份 .docx（应为 31 份）。"
-         f"请解压 docs/31省区市政府工作报告.zip（注意 GBK 文件名，"
-         f"可用 mvp/setup_and_run.py 的解压逻辑）")
+         f"请确认 docs/{REPORTS_ZIP.name} 存在且完整")
 print(f"  ✅ 语料就绪: docs/ 下 {n_docx} 份报告")
 
 # ---------------------------------------------------------------- 3. 模型权重

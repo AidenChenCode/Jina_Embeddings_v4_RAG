@@ -46,9 +46,10 @@ services:
       - ./models:/app/models
       # 向量索引与切块结果：建一次就持久化在这里
       - ./data:/app/data
-      # 配置文件（含 API Key），只读挂载
+      # 配置文件（含 API Key）：setup_full.py 首次运行时在这里生成 config.py，需可写
       - ./config:/app/config
-      - ./docs:/app/docs:ro
+      # 报告原文：仓库里只有压缩包，setup_full.py 首次运行时在这里解压，需可写
+      - ./docs:/app/docs
       - ./API_KIT:/app/API_KIT:ro
       - ./web:/app/web:ro
       - ./src:/app/src:ro

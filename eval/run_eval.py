@@ -5,9 +5,13 @@ RAG 评测：意图 → 检索 → 答案 三层打分，再做信息点级归�
 
     python eval/run_eval.py                                # 进程内评测 Demo 后端（无需 GPU / Key）
     python eval/run_eval.py --api http://127.0.0.1:8000    # 评测正在运行的服务（Demo 或完整模式）
+    python eval/run_eval.py --api ... --expect-full        # 要求被测服务是完整系统，降级成 Demo 就中止
+    python eval/run_eval.py --api ... --limit 5            # 先试跑 5 题，估算耗时和费用
     python eval/run_eval.py --out eval/reports/某次.md      # 报告另存一份
     python eval/run_eval.py --types enumerate,fact         # 只跑部分题型
     python eval/run_eval.py --dump eval/reports/某次.jsonl  # 导出逐题明细，便于对比两次评测
+
+--api 模式只用 Python 标准库，不需要安装任何依赖。
 
 答案判分随生成方式自动切换：
 - 摘编模式（Demo 未配 Key）：答案是原文片段，判「用户能否在答案里看到证据」
@@ -85,15 +89,16 @@ class DemoBackend:
 class ApiBackend:
     """通过 HTTP 评测任意一个兼容接口的服务（web_server.py 或 api_server.py）。"""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, timeout: float = 600):
         self.url = url.rstrip("/")
-        mode = "未知"
+        self.timeout = timeout
+        self.mode = None                        # 服务自报的模式：demo / full / None(未知)
         try:
             with urllib.request.urlopen(f"{self.url}/api/status", timeout=10) as r:
-                d = json.load(r).get("data") or {}
-            mode = {"demo": "Demo 模式", "full": "完整系统"}.get(d.get("mode"), d.get("mode", "未知"))
+                self.mode = (json.load(r).get("data") or {}).get("mode")
         except Exception:
             pass
+        mode = {"demo": "Demo 模式", "full": "完整系统"}.get(self.mode, self.mode or "未知")
         self.label = f"HTTP 接口 · {self.url} · {mode}"
 
     def ask(self, q: str) -> Answer:
@@ -102,7 +107,7 @@ class ApiBackend:
             headers={"Content-Type": "application/json"})
         t0 = time.time()
         try:
-            with urllib.request.urlopen(req, timeout=200) as r:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
                 resp = json.load(r)
         except Exception as e:
             return Answer("", "", True, None, True, time.time() - t0, error=str(e))
@@ -455,6 +460,11 @@ def main():
     ap = argparse.ArgumentParser(description="RAG 评测")
     ap.add_argument("--api", help="被测服务地址，如 http://127.0.0.1:8000；不填则进程内评测 Demo 后端")
     ap.add_argument("--types", help="只跑这些题型，逗号分隔：enumerate,fact,compare,aggregate,negative")
+    ap.add_argument("--limit", type=int, help="只跑前 N 题，用于小规模试跑、估算耗时和费用")
+    ap.add_argument("--timeout", type=float, default=600,
+                    help="--api 模式下单题超时秒数（默认 600；完整系统的全省查询会分批多次调用 LLM）")
+    ap.add_argument("--expect-full", action="store_true",
+                    help="--api 模式下要求被测服务是完整系统；服务降级成 Demo 时直接中止")
     ap.add_argument("--out", help="报告另存为 Markdown 文件")
     ap.add_argument("--dump", help="逐题明细另存为 JSONL")
     args = ap.parse_args()
@@ -463,8 +473,17 @@ def main():
     if args.types:
         keep = set(args.types.split(","))
         items = [it for it in items if it["type"] in keep]
+    if args.limit:
+        items = items[:args.limit]
 
-    backend = ApiBackend(args.api) if args.api else DemoBackend()
+    if args.expect_full and not args.api:
+        ap.error("--expect-full 只能和 --api 一起使用")
+    backend = ApiBackend(args.api, args.timeout) if args.api else DemoBackend()
+    if args.expect_full and backend.mode != "full":
+        print(f"❌ 被测服务不是完整系统（/api/status 报告的模式：{backend.mode or '获取失败'}）。\n"
+              "   web_server.py 在完整系统初始化失败时会自动降级成 Demo，"
+              "请查看服务启动日志里「降级为 demo 模式」那一行的原因。", file=sys.stderr)
+        sys.exit(2)
     print(f"▶ {backend.label}：评测 {len(items)} 题 …", file=sys.stderr)
 
     recs = []

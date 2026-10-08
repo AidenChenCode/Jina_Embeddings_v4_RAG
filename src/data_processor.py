@@ -15,7 +15,6 @@ import logging
 
 # 导入文档处理库
 from docx import Document
-import jieba
 from tqdm import tqdm
 
 # 设置日志

@@ -236,8 +236,10 @@ class VectorStore:
         
         try:
             # 编码查询文本 - 使用SDPA优化
+            # Jina v4 是非对称检索模型：查询侧必须用 query 前缀（encode_query），
+            # 文档侧用 passage 前缀，两者不能混用
             embedding_manager = get_embedding_manager(attn_implementation="sdpa")
-            query_embedding = embedding_manager.encode_texts([query], show_progress=False)
+            query_embedding = embedding_manager.encode_query(query).reshape(1, -1)
             
             if len(query_embedding) == 0:
                 logger.error("❌ 查询编码失败")

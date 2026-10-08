@@ -26,6 +26,7 @@ class RetrievalResult:
     total_chars: int
     query_type: str
     retrieval_strategy: str
+    scores: dict = None  # 块id → 相似度分数（相邻块聚合等来源的块无分数）
 
 class RAGRetriever:
     """RAG检索引擎"""
@@ -191,7 +192,8 @@ class RAGRetriever:
         
         all_chunks = []
         provinces_found = set()
-        
+        scores = {}
+
         # 为每个省份单独检索
         for province in self.provinces:
             province_chunks = self.vector_store.search(
@@ -204,17 +206,19 @@ class RAGRetriever:
             for chunk, score in province_chunks[:top_k_per_province]:
                 all_chunks.append(chunk)
                 provinces_found.add(province)
-        
+                scores[chunk.id] = float(score)
+
         total_chars = sum(chunk.char_count for chunk in all_chunks)
-        
+
         logger.info(f"✅ 检索完成: {len(provinces_found)} 个省份, {len(all_chunks)} 个块")
-        
+
         return RetrievalResult(
             chunks=all_chunks,
             provinces=provinces_found,
             total_chars=total_chars,
             query_type="all_provinces",
-            retrieval_strategy="province_based"
+            retrieval_strategy="province_based",
+            scores=scores
         )
     
     def retrieve_for_specific_provinces(self, query: str, provinces: List[str], 
@@ -241,7 +245,8 @@ class RAGRetriever:
         
         all_chunks = []
         provinces_found = set()
-        
+        scores = {}
+
         for province in provinces:
             if province not in self.provinces:
                 logger.warning(f"⚠️ 未知省份: {province}")
@@ -256,15 +261,17 @@ class RAGRetriever:
             for chunk, score in province_chunks[:top_k_per_province]:
                 all_chunks.append(chunk)
                 provinces_found.add(province)
-        
+                scores[chunk.id] = float(score)
+
         total_chars = sum(chunk.char_count for chunk in all_chunks)
-        
+
         return RetrievalResult(
             chunks=all_chunks,
             provinces=provinces_found,
             total_chars=total_chars,
             query_type="specific_provinces",
-            retrieval_strategy="targeted"
+            retrieval_strategy="targeted",
+            scores=scores
         )
     
     def retrieve_for_comparison(self, query: str, provinces: List[str] = None, 
@@ -286,7 +293,8 @@ class RAGRetriever:
         top_k_per_province = self.config["comparison"]["top_k_per_province"]
         
         logger.info(f"⚖️ 对比检索: {query} (每省{top_k_per_province}块)")
-        
+
+        scores = {}
         if provinces:
             # 对比特定省份
             all_chunks = []
@@ -303,20 +311,23 @@ class RAGRetriever:
                 for chunk, score in province_chunks[:top_k_per_province]:
                     all_chunks.append(chunk)
                     provinces_found.add(province)
+                    scores[chunk.id] = float(score)
         else:
             # 全局对比检索
             search_results = self.vector_store.search(query, top_k=top_k)
             all_chunks = [chunk for chunk, score in search_results]
             provinces_found = set(chunk.province for chunk in all_chunks)
-        
+            scores = {chunk.id: float(score) for chunk, score in search_results}
+
         total_chars = sum(chunk.char_count for chunk in all_chunks)
-        
+
         return RetrievalResult(
             chunks=all_chunks,
             provinces=provinces_found,
             total_chars=total_chars,
             query_type="comparison",
-            retrieval_strategy="comparative"
+            retrieval_strategy="comparative",
+            scores=scores
         )
     
     def retrieve_by_topic(self, query: str, chunk_type: str = "target", 
@@ -346,13 +357,14 @@ class RAGRetriever:
         all_chunks = [chunk for chunk, score in search_results]
         provinces_found = set(chunk.province for chunk in all_chunks)
         total_chars = sum(chunk.char_count for chunk in all_chunks)
-        
+
         return RetrievalResult(
             chunks=all_chunks,
             provinces=provinces_found,
             total_chars=total_chars,
             query_type="topic",
-            retrieval_strategy="topic_based"
+            retrieval_strategy="topic_based",
+            scores={chunk.id: float(score) for chunk, score in search_results}
         )
     
     def smart_retrieve(self, query: str, max_context_chars: int = None) -> RetrievalResult:
@@ -406,6 +418,7 @@ class RAGRetriever:
             # 通用检索 - 大幅增加检索数量
             search_results = self.vector_store.search(query, top_k=60)  # 从25增加到60
             primary_chunks = [chunk for chunk, score in search_results]
+            primary_scores = {chunk.id: float(score) for chunk, score in search_results}
             
             # 应用相邻块聚合策略
             enhanced_chunks = []
@@ -434,7 +447,8 @@ class RAGRetriever:
                 provinces=provinces_found,
                 total_chars=total_chars,
                 query_type="general",
-                retrieval_strategy="semantic_with_adjacent"
+                retrieval_strategy="semantic_with_adjacent",
+                scores=primary_scores
             )
             if max_context_chars is None:
                 max_context_chars = self.config["max_contexts_per_query"]
@@ -521,7 +535,8 @@ class RAGRetriever:
             provinces=set(chunk.province for chunk in truncated_chunks),
             total_chars=sum(chunk.char_count for chunk in truncated_chunks),
             query_type=result.query_type,
-            retrieval_strategy=result.retrieval_strategy + "_truncated"
+            retrieval_strategy=result.retrieval_strategy + "_truncated",
+            scores=result.scores
         )
     
     def format_context(self, result: RetrievalResult) -> str:

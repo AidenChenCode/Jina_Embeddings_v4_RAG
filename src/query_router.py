@@ -372,10 +372,24 @@ class QueryRouter:
             processing_time = time.time() - start_time
 
             if response.success:
+                # 组装引用来源（供前端展示，分数来自向量检索，相邻块聚合等无分数的块为 None）
+                scores = retrieval_result.scores or {}
+                sources = [
+                    {
+                        "id": chunk.id,
+                        "province": chunk.province,
+                        "chunk_type": chunk.chunk_type,
+                        "score": round(scores[chunk.id], 4) if chunk.id in scores else None,
+                        "char_count": chunk.char_count,
+                        "excerpt": chunk.content[:300],
+                    }
+                    for chunk in retrieval_result.chunks
+                ]
                 return {
                     "success": True,
                     "content": response.content,
                     "provinces": list(retrieval_result.provinces),
+                    "sources": sources,
                     "processing_time": processing_time,
                     "batch_info": batch,
                 }
@@ -446,11 +460,22 @@ class QueryRouter:
         # 合并所有成功的结果
         all_content = []
         all_provinces = set()
+        all_sources = []
+        seen_source_ids = set()
 
         for result in results:
             if result["success"]:
                 all_content.append(result["content"])
                 all_provinces.update(result.get("provinces", []))
+                for src in result.get("sources", []):
+                    if src["id"] not in seen_source_ids:
+                        seen_source_ids.add(src["id"])
+                        all_sources.append(src)
+
+        # 按分数降序，无分数的块沉底，最多保留 12 条供前端展示
+        all_sources.sort(key=lambda s: s["score"] if s["score"] is not None else -1,
+                         reverse=True)
+        all_sources = all_sources[:12]
 
         # 根据输出格式整理结果
         if plan.output_format == "province_list":
@@ -464,6 +489,7 @@ class QueryRouter:
             "success": True,
             "content": final_content,
             "provinces": list(all_provinces),
+            "sources": all_sources,
             "query_plan": plan,
             "batch_results": results,
         }

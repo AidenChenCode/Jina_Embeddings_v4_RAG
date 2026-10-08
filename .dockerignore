@@ -1,0 +1,35 @@
+# 构建镜像时不需要拷进去的东西。
+# 关键是 models/（7.5GB 权重）和 data/（向量索引）——它们靠卷挂载，
+# 打进镜像会让镜像变成几 GB 且每次改代码都要重传。
+
+.git/
+.gitignore
+
+# 模型权重与索引：运行时挂载，不进镜像
+models/
+data/
+
+# 语料压缩包（docx 原文要保留，zip 不需要）
+docs/*.zip
+
+# Python 缓存与虚拟环境
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 配置文件含 API Key，不进镜像（用环境变量传入）
+config/config.py
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志与临时文件
+*.log
+logs/
+tmp/

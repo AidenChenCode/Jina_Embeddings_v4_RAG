@@ -146,6 +146,59 @@ unzip "31省区市政府工作报告.zip"
 
 ## ⚡ 快速开始
 
+### 💬 网页聊天前端（推荐，1 分钟跑起来）
+
+无需 GPU、无需模型权重、无需 API Key，用仓库自带的 855 块数据即可体验完整交互：
+
+```bash
+pip install fastapi uvicorn scikit-learn numpy
+python API_KIT/web_server.py --demo
+# 浏览器打开 http://127.0.0.1:8000
+```
+
+界面包含聊天气泡、引用来源面板（省份 / 相似度 / 原文摘要）、分阶段进度态和示例问题。
+
+- **Demo 模式**：TF-IDF 检索 + 原文摘编；设置环境变量 `SILICONFLOW_API_KEY` 后自动改用 LLM 生成完整答案
+- **完整模式**：按下方步骤部署后，去掉 `--demo` 参数即自动启用（失败会自动降级回 Demo 模式）
+
+### 🐳 用 Docker 启动（环境隔离，推荐）
+
+```bash
+docker compose up -d demo     # Demo 模式，约 3 分钟
+docker compose up -d full     # 完整模式，需先下载权重到 ./models
+```
+
+> **想部署到云服务器？** 见 **[DEPLOY_CN.md](DEPLOY_CN.md)** —— 从开通服务器、放行端口、安装 Docker 到两条部署路线的完整教程，含访问控制、成本管理与常见问题排查。
+
+### 📏 评测
+
+```bash
+python eval/run_eval.py                               # 评测 Demo 后端，约 5 秒，无需 GPU / Key
+python eval/run_eval.py --api http://127.0.0.1:8000   # 评测正在运行的服务（含完整系统）
+```
+
+57 题评测集，按意图、检索、答案三层打分，并把每个信息点归因到检索层或生成层。评测方案、基线结果与一次完整的改进验证见 **[EVAL_CN.md](EVAL_CN.md)**。
+
+### 🚀 完整模式（Jina v4 + FAISS + LLM）一键部署
+
+```bash
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 下载 Jina v4 权重（约 7.5GB，只需一次；国内先设 HF_ENDPOINT=https://hf-mirror.com）
+pip install -U huggingface_hub
+hf download jinaai/jina-embeddings-v4 --local-dir models/jina-embeddings-v4
+
+# 3. 一键预检 + 建索引（自动生成 config、检测 GPU/CPU、构建 FAISS 索引）
+export SILICONFLOW_API_KEY=你的密钥   # 可选，不设则无法生成答案但可建索引
+python setup_full.py
+
+# 4. 启动
+python API_KIT/web_server.py
+```
+
+预期耗时：建索引 GPU 约 2~5 分钟、CPU 约 15~40 分钟（只建一次）；查询时 CPU 每次多 1~3 秒编码时间。前端顶栏显示「完整系统 · Jina v4」即部署成功。
+
 ### 5分钟快速体验
 
 ```bash

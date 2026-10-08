@@ -204,6 +204,7 @@ class GovernmentReportRAG:
                 "output_format": query_plan.output_format,
                 "processing_time": processing_time,
                 "processing_stats": processing_stats,
+                "sources": execution_result.get("sources", []),
                 "query_plan": {
                     "strategy": query_plan.batch_strategy,
                     "batches": len(query_plan.batches)

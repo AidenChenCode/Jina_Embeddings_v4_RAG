@@ -38,7 +38,8 @@ def query_api(request: QueryRequest):
                     "query_type": result.get("query_type", "unknown"),
                     "output_format": result.get("output_format", "unknown"),
                     "processing_time": result.get("processing_time", 0),
-                    "processing_stats": result.get("processing_stats", {})
+                    "processing_stats": result.get("processing_stats", {}),
+                    "sources": result.get("sources", [])
                 },
                 message="查询成功"
             )

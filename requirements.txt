@@ -8,7 +8,6 @@ requests==2.31.0
 python-dotenv==1.0.0
 tqdm==4.66.1
 scikit-learn==1.3.2
-jieba==0.42.1
 openai==1.3.8
 # Jina Embeddings v4 官方依赖
 peft>=0.15.2

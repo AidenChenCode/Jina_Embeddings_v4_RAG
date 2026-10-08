@@ -10,6 +10,14 @@ class QueryRequest(BaseModel):
     query: str
     options: Optional[QueryOptions] = None
 
+class SourceChunk(BaseModel):
+    id: str
+    province: str
+    chunk_type: str
+    score: Optional[float] = None
+    char_count: int
+    excerpt: str
+
 class QueryResponseData(BaseModel):
     content: str
     provinces: List[str]
@@ -17,6 +25,7 @@ class QueryResponseData(BaseModel):
     output_format: str
     processing_time: float
     processing_stats: Optional[Dict[str, Any]] = None
+    sources: Optional[List[SourceChunk]] = None
 
 class QueryResponse(BaseModel):
     success: bool

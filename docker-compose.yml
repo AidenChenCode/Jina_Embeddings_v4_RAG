@@ -1,0 +1,63 @@
+# 政府工作报告 RAG —— 容器编排
+#
+# 两个服务，按需启一个（不要同时启，会抢 8000 端口）：
+#
+#   docker compose up -d demo    # 轻量，3 分钟能看到界面，推荐先跑这个
+#   docker compose up -d full    # 完整系统，需先下载模型权重到 ./models
+#
+# 常用运维命令：
+#   docker compose logs -f demo      看实时日志
+#   docker compose restart demo      改完代码重启（代码是挂载进去的，无需重新 build）
+#   docker compose down              停止并删除容器（数据在卷里，不会丢）
+
+services:
+  # ---------------------------------------------------------------- Demo 模式
+  demo:
+    build:
+      context: .
+      target: demo
+    image: govrag:demo
+    container_name: govrag-demo
+    ports:
+      # 宿主机 8000 → 容器 8000。改左边的数字可换宿主机端口，如 "9000:8000"
+      - "8000:8000"
+    volumes:
+      # 代码挂载进去：改完 restart 即生效，不用重新 build 镜像
+      - ./API_KIT:/app/API_KIT:ro
+      - ./web:/app/web:ro
+      - ./mvp:/app/mvp:ro
+    environment:
+      # 可选：填了就用 LLM 生成答案，不填是原文摘编模式
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+    # 容器挂了或服务器重启后自动拉起（手动 down 的不会自己起来）
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- 完整模式
+  full:
+    build:
+      context: .
+      target: full
+    image: govrag:full
+    container_name: govrag-full
+    ports:
+      - "8000:8000"
+    volumes:
+      # 7.5GB 模型权重：宿主机下载一次，容器换了也不用重下
+      - ./models:/app/models
+      # 向量索引与切块结果：建一次就持久化在这里
+      - ./data:/app/data
+      # 配置文件（含 API Key）：setup_full.py 首次运行时在这里生成 config.py，需可写
+      - ./config:/app/config
+      # 报告原文：仓库里只有压缩包，setup_full.py 首次运行时在这里解压，需可写
+      - ./docs:/app/docs
+      - ./API_KIT:/app/API_KIT:ro
+      - ./web:/app/web:ro
+      - ./src:/app/src:ro
+    environment:
+      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+      # 国内服务器拉 HuggingFace 走镜像站
+      - HF_ENDPOINT=${HF_ENDPOINT:-https://hf-mirror.com}
+    restart: unless-stopped
+    # 注意：这里刻意不配置 uvicorn --workers。
+    # 完整模式下每个 worker 会独立加载一份 7.5GB 模型，
+    # 4 个 worker ≈ 30GB 内存起步，且各自持有互不相通的索引单例。

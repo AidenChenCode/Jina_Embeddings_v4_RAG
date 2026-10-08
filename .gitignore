@@ -32,6 +32,8 @@ Thumbs.db
 data/processed/
 data/vectors/
 *.json
+# Demo 模式的检索数据必须入库，否则 clone 后无法直接运行
+!mvp/chunks.json
 *.pkl
 *.cache
 
